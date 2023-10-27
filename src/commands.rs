@@ -1,43 +1,13 @@
-use std::{fs, fmt::Display};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use std::fs;
 
-use crate::{init_cfg, get_config};
-
-#[derive(Clone, Debug)]
-enum Plattform {
-    GITHUB,
-    GITLAB,
-    BITBUCKET,
-    UNSUPPORTED,
-}
-
-impl Display for Plattform {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Plattform::GITHUB => write!(f, "github"),
-            Plattform::GITLAB => write!(f, "gitlab"),
-            Plattform::BITBUCKET => write!(f, "bitbucket"),
-            Plattform::UNSUPPORTED => write!(f, "unsupported"),
-        }
-    }
-}
-
-impl From<&str> for Plattform {
-    fn from(s: &str) -> Plattform {
-        match s.to_lowercase().as_str() {
-            "github" => Plattform::GITHUB,
-            "gitlab" => Plattform::GITLAB,
-            "bitbucket" => Plattform::BITBUCKET,
-            _ => Plattform::UNSUPPORTED,
-        }
-    }
-}
+use crate::{get_config, get_config_for_plattform, init_cfg, Plattform};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GitRepo {
-    name: String,
-    cfg: GitRepoCfg,
+    pub name: String,
+    pub cfg: GitRepoCfg,
 }
 
 impl GitRepo {
@@ -78,12 +48,15 @@ pub struct SetCommand {
 }
 
 impl SetCommand {
-    pub fn new(cfg_file: fs::File, args: Vec<String>) -> anyhow::Result<Self> {
-        if args.len() < 3 {
+    pub fn new(
+        cfg_file: fs::File,
+        args: Vec<String>,
+        plattform: Plattform,
+    ) -> anyhow::Result<Self> {
+        if args.len() < 2 {
             return Err(anyhow!("Please provide all args"));
         }
 
-        let plattform = Plattform::from(args[0].as_str());
         if let Plattform::UNSUPPORTED = plattform {
             return Err(anyhow!(
                 "Unsupported Plattform please use one of the following: github, gitlab, bitbucket"
@@ -97,7 +70,7 @@ impl SetCommand {
     }
 
     pub fn parse(&self) {
-        let set_args = GitRepoCfgArgs::from(self.args[1].as_str());
+        let set_args = GitRepoCfgArgs::from(self.args[0].as_str());
         match set_args {
             GitRepoCfgArgs::URL => {
                 self.set_url();
@@ -126,7 +99,7 @@ impl SetCommand {
                 .unwrap();
 
             let mut new_cfg = cfg.clone();
-            new_cfg.cfg.url = self.args[2].clone();
+            new_cfg.cfg.url = self.args[1].clone();
 
             let mut new_configs = configs.clone();
             new_configs[idx] = new_cfg;
@@ -152,7 +125,7 @@ impl SetCommand {
                 .unwrap();
 
             let mut new_cfg = cfg.clone();
-            new_cfg.cfg.token = self.args[2].clone();
+            new_cfg.cfg.token = self.args[1].clone();
 
             let mut new_configs = configs.clone();
             new_configs[idx] = new_cfg;
@@ -217,11 +190,20 @@ impl ShowCommand {
 pub struct InitCommand {
     cfg_file: fs::File,
     args: Vec<String>,
+    plattform: Plattform,
 }
 
 impl InitCommand {
-    pub fn new(cfg_file: fs::File, args: Vec<String>) -> anyhow::Result<Self> {
-        Ok(InitCommand{ cfg_file, args })
+    pub fn new(
+        cfg_file: fs::File,
+        args: Vec<String>,
+        plattform: Plattform,
+    ) -> anyhow::Result<Self> {
+        Ok(InitCommand {
+            cfg_file,
+            args,
+            plattform,
+        })
     }
 
     pub fn parse(&self) {
@@ -232,15 +214,23 @@ impl InitCommand {
             repo_name = None;
         }
 
-        if let None = repo_name {
-            println!("Intializing Repo in current directory...");
-        } else {
-            println!("Intializing Repo in {}...", repo_name.unwrap());
+        if let Plattform::UNSUPPORTED = self.plattform {
+            eprintln!(
+                "Unsupported Plattform please use one of the following: github, gitlab, bitbucket"
+            );
+            return;
         }
 
+        // Get Config for Current Plattform
+        let config = get_config_for_plattform(&self.cfg_file, &self.plattform).unwrap();
 
-
-
+        if let None = repo_name {
+            println!("Intializing Repo in current directory...");
+            let output = std::process::Command::new("git")
+                .args(["init"])
+                .output()
+                .expect("failed to execute process");
+            println!("{}", output.status);
+        }
     }
 }
-
