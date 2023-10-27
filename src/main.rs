@@ -1,9 +1,10 @@
-use std::{fmt::Display, fs, io::Write, path::PathBuf};
+use std::{fmt::Display, fs, io::Write, path::PathBuf, rc::Rc};
 
 use anyhow::Context;
 use clap::Parser;
 
 pub mod commands;
+pub mod git;
 
 #[derive(Parser)]
 struct Cli {
@@ -68,20 +69,22 @@ const CONFIG_DIR: &'static str = "./.config/power_git/";
 
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
-    let cfg = init_cfg(None)?;
+    let cfg_fd = init_cfg(None)?;
+    let config = get_config_for_plattform(&cfg_fd, &args.plattform).unwrap();
+    let gitlab_client = git::GitlabClient::new(config.cfg.url.as_str(), config.cfg.token.as_str())?;
 
     match args.keyword {
         Command::SET => {
-            commands::SetCommand::new(cfg, args.args, args.plattform)?.parse();
+            commands::SetCommand::new(cfg_fd, args.args, args.plattform)?.parse();
         }
         Command::INIT => {
-            commands::InitCommand::new(cfg, args.args, args.plattform)?.parse();
+            commands::InitCommand::new(cfg_fd, args.args, args.plattform, Rc::new(gitlab_client))?.parse();
         }
         Command::UNKNOWN => {
             println!("Unknown");
         }
         Command::SHOW => {
-            commands::ShowCommand::new(cfg, args.args)?.show();
+            commands::ShowCommand::new(cfg_fd, args.args)?.show();
         }
     }
     Ok(())

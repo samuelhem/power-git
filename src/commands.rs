@@ -1,8 +1,8 @@
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{fs, rc::Rc};
 
-use crate::{get_config, get_config_for_plattform, init_cfg, Plattform};
+use crate::{get_config, get_config_for_plattform, init_cfg, Plattform, git};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GitRepo {
@@ -18,10 +18,11 @@ impl GitRepo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GitRepoCfg {
-    url: String,
-    token: String,
+    pub url: String,
+    pub token: String,
     default: bool,
 }
+
 
 enum GitRepoCfgArgs {
     URL,
@@ -187,26 +188,29 @@ impl ShowCommand {
     }
 }
 
-pub struct InitCommand {
+pub struct InitCommand<'a> {
     cfg_file: fs::File,
     args: Vec<String>,
     plattform: Plattform,
+    git_client: Rc<dyn git::Initializable<'a>>,
 }
 
-impl InitCommand {
+impl<'a> InitCommand<'a> {
     pub fn new(
         cfg_file: fs::File,
         args: Vec<String>,
         plattform: Plattform,
+        git_client: Rc<dyn git::Initializable<'a>>  
     ) -> anyhow::Result<Self> {
         Ok(InitCommand {
             cfg_file,
             args,
             plattform,
+            git_client,
         })
     }
 
-    pub fn parse(&self) {
+    pub fn parse (&self) {
         let repo_name: Option<String>;
         if self.args.len() == 1 {
             repo_name = Some(self.args[0].clone());
@@ -231,6 +235,11 @@ impl InitCommand {
                 .output()
                 .expect("failed to execute process");
             println!("{}", output.status);
+
+            println!("Intializing Remote Repo with name {}...", repo_name.as_ref().unwrap());
+            let current_dir = std::env::current_dir().unwrap();
+            self.git_client.init_repo(String::from(current_dir.to_str().unwrap()));
         }
+
     }
 }
